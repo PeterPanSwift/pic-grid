@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧩 圖片拼接工具</title>
+<style>
+  :root {
+    --bg: #f7f5ff;
+    --card: #ffffff;
+    --accent: #7c5cff;
+    --accent-light: #ede9ff;
+    --text: #333;
+    --border: #e2ddf5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { text-align: center; margin: 0 0 4px; font-size: 28px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 14px; }
+  .container { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 2px 12px rgba(124, 92, 255, .08);
+  }
+  /* 語言切換 */
+  #langSwitch {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    background: #fff; border: 1.5px solid var(--accent); color: var(--accent);
+    border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: 700;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(124, 92, 255, .15);
+  }
+  #langSwitch:hover { background: var(--accent-light); }
+  /* 上傳區 */
+  #dropZone {
+    border: 2px dashed var(--accent);
+    border-radius: 16px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .2s;
+    background: var(--accent-light);
+  }
+  #dropZone:hover, #dropZone.dragover { background: #ddd4ff; }
+  #dropZone p { margin: 6px 0; }
+  #dropZone .big { font-size: 40px; margin: 0; }
+  #fileInput { display: none; }
+  .hint { font-size: 13px; color: #777; }
+
+  /* 縮圖列表 */
+  #thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+    min-height: 10px;
+  }
+  .thumb {
+    position: relative;
+    width: 90px;
+    height: 90px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    cursor: grab;
+    background: #fafafa;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .thumb .idx {
+    position: absolute; top: 4px; left: 4px;
+    background: rgba(124, 92, 255, .9); color: #fff;
+    font-size: 11px; padding: 1px 6px; border-radius: 8px;
+  }
+  .thumb .del {
+    position: absolute; top: 4px; right: 4px;
+    width: 20px; height: 20px; border: none; border-radius: 50%;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 12px;
+    cursor: pointer; line-height: 20px; padding: 0;
+  }
+  .thumb .del:hover { background: #e74c3c; }
+  .thumb.dragging { opacity: .4; }
+
+  /* 設定區 */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 13px; color: #666; font-weight: 600; }
+  .field input[type=number], .field select {
+    width: 130px; padding: 8px 10px;
+    border: 1.5px solid var(--border); border-radius: 10px;
+    font-size: 15px; outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input[type=color] {
+    width: 48px; height: 38px; padding: 2px;
+    border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer;
+  }
+  .checkbox-field { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 8px; }
+
+  button.secondary {
+    background: #fff; color: var(--accent); border: 1.5px solid var(--accent);
+    padding: 11px 22px; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button.secondary:hover { background: var(--accent-light); }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+  /* 預覽 */
+  #previewWrap { text-align: center; display: none; }
+  #previewWrap h2 { font-size: 18px; margin: 0 0 12px; }
+  #resultCanvas {
+    max-width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background-image:
+      linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%),
+      linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+  }
+  #sizeInfo { font-size: 13px; color: #888; margin-top: 8px; }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 10px 20px; border-radius: 10px;
+    font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<button id="langSwitch">EN</button>
+<div class="container">
+  <h1 data-i18n="title"></h1>
+  <p class="subtitle" data-i18n="subtitle"></p>
+
+  <!-- 上傳區 -->
+  <div class="card">
+    <div id="dropZone">
+      <p class="big">📸</p>
+      <p data-i18n-html="dropMain"></p>
+      <p class="hint" data-i18n="dropPaste"></p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <div id="thumbs"></div>
+    <p class="hint" id="thumbHint" style="display:none" data-i18n="thumbHint"></p>
+  </div>
+
+  <!-- 設定區 -->
+  <div class="card">
+    <div class="controls">
+      <div class="field">
+        <label data-i18n="cols"></label>
+        <input type="number" id="cols" min="1" value="2">
+      </div>
+      <div class="field">
+        <label data-i18n="rows"></label>
+        <input type="number" id="rows" min="1" value="3">
+      </div>
+      <div class="field">
+        <label data-i18n="gap"></label>
+        <input type="number" id="gap" min="0" value="10">
+      </div>
+      <div class="field">
+        <label data-i18n="fitMode"></label>
+        <select id="fitMode">
+          <option value="cover" data-i18n="fitCover"></option>
+          <option value="contain" data-i18n="fitContain"></option>
+        </select>
+      </div>
+      <div class="field">
+        <label data-i18n="bgColor"></label>
+        <input type="color" id="bgColor" value="#ffffff">
+      </div>
+      <div class="field checkbox-field">
+        <input type="checkbox" id="transparentBg">
+        <label for="transparentBg" data-i18n="transparent"></label>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:18px">
+      <button class="secondary" id="downloadBtn" style="display:none" data-i18n="download"></button>
+      <button class="secondary" id="clearBtn" style="display:none" data-i18n="clear"></button>
+      <span class="hint" id="statusHint"></span>
+    </div>
+  </div>
+
+  <!-- 預覽 -->
+  <div class="card" id="previewWrap">
+    <h2 data-i18n="preview"></h2>
+    <canvas id="resultCanvas"></canvas>
+    <p id="sizeInfo"></p>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ---- i18n ----
+const I18N = {
+  zh: {
+    title: '🧩 圖片拼接工具',
+    subtitle: '上傳幾張圖，排排站好，合體成一張！',
+    dropMain: '<strong>點擊選擇圖片</strong>，或把圖片拖進來',
+    dropPaste: '也可以直接 ⌘V / Ctrl+V 貼上剪貼簿的圖片喔！',
+    thumbHint: '💡 拖曳縮圖可以調整順序，點 ✕ 移除',
+    cols: '直行（橫向幾張）',
+    rows: '橫列（直向幾張）',
+    gap: '間距 (px)',
+    fitMode: '圖片填滿方式',
+    fitCover: '填滿裁切（cover）',
+    fitContain: '完整顯示（contain）',
+    bgColor: '背景 / 間距顏色',
+    transparent: '透明背景',
+    download: '⬇️ 下載 PNG',
+    clear: '🗑 清空全部',
+    preview: '👀 即時預覽',
+    statusDefault: '上傳圖片後會自動即時預覽 ✨',
+    warnGrid: (c, r, n) => `⚠️ ${c} × ${r} = ${c * r} 格，裝不下 ${n} 張圖`,
+    sizeInfo: (w, h) => `輸出尺寸：${w} × ${h} px`,
+    toastAdded: n => `已加入 ${n} 張圖片 🖼`,
+    toastDownloaded: '下載完成！🎊',
+    removeTitle: '移除',
+    langBtn: 'EN',
+    htmlLang: 'zh-Hant'
+  },
+  en: {
+    title: '🧩 Image Grid Merger',
+    subtitle: 'Upload some images, line them up, merge into one!',
+    dropMain: '<strong>Click to choose images</strong>, or drag them here',
+    dropPaste: 'You can also paste images with ⌘V / Ctrl+V!',
+    thumbHint: '💡 Drag thumbnails to reorder, click ✕ to remove',
+    cols: 'Columns (across)',
+    rows: 'Rows (down)',
+    gap: 'Gap (px)',
+    fitMode: 'Image fit',
+    fitCover: 'Fill & crop (cover)',
+    fitContain: 'Fit whole image (contain)',
+    bgColor: 'Background / gap color',
+    transparent: 'Transparent background',
+    download: '⬇️ Download PNG',
+    clear: '🗑 Clear all',
+    preview: '👀 Live Preview',
+    statusDefault: 'Upload images to see a live preview ✨',
+    warnGrid: (c, r, n) => `⚠️ ${c} × ${r} = ${c * r} cells — not enough for ${n} images`,
+    sizeInfo: (w, h) => `Output size: ${w} × ${h} px`,
+    toastAdded: n => `Added ${n} image${n > 1 ? 's' : ''} 🖼`,
+    toastDownloaded: 'Downloaded! 🎊',
+    removeTitle: 'Remove',
+    langBtn: '中文',
+    htmlLang: 'en'
+  }
+};
+
+let lang;
+try { lang = localStorage.getItem('picgrid-lang'); } catch (e) { lang = null; }
+if (lang !== 'zh' && lang !== 'en') {
+  lang = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+const t = key => I18N[lang][key];
+
+function applyLang() {
+  const dict = I18N[lang];
+  document.documentElement.lang = dict.htmlLang;
+  document.title = dict.title;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = dict[el.dataset.i18n];
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = dict[el.dataset.i18nHtml];
+  });
+  document.getElementById('langSwitch').textContent = dict.langBtn;
+  if (!statusHint.dataset.warn) statusHint.textContent = images.length ? '' : dict.statusDefault;
+  renderThumbs();
+  updatePreview();
+}
+
+document.getElementById('langSwitch').addEventListener('click', () => {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  try { localStorage.setItem('picgrid-lang', lang); } catch (e) {}
+  applyLang();
+});
+
+// ---- 狀態 ----
+const images = []; // { img: HTMLImageElement, url: string }
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const thumbs = document.getElementById('thumbs');
+const thumbHint = document.getElementById('thumbHint');
+const statusHint = document.getElementById('statusHint');
+const downloadBtn = document.getElementById('downloadBtn');
+const clearBtn = document.getElementById('clearBtn');
+const previewWrap = document.getElementById('previewWrap');
+const canvas = document.getElementById('resultCanvas');
+const sizeInfo = document.getElementById('sizeInfo');
+const toast = document.getElementById('toast');
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+// ---- 加入圖片 ----
+function addFiles(fileList) {
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  let loaded = 0;
+  files.forEach(file => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      images.push({ img, url });
+      if (++loaded === files.length) {
+        renderThumbs();
+        updatePreview();
+        showToast(t('toastAdded')(files.length));
+      }
+    };
+    img.src = url;
+  });
+}
+
+// 點擊選檔
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { addFiles(e.target.files); fileInput.value = ''; });
+
+// 拖放
+['dragover', 'dragenter'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
+dropZone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+
+// 貼上
+document.addEventListener('paste', e => {
+  const items = [...(e.clipboardData?.items || [])]
+    .filter(it => it.type.startsWith('image/'))
+    .map(it => it.getAsFile())
+    .filter(Boolean);
+  if (items.length) addFiles(items);
+});
+
+// ---- 縮圖 + 拖曳排序 ----
+function renderThumbs() {
+  thumbs.innerHTML = '';
+  images.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    div.draggable = true;
+    div.dataset.index = i;
+    div.innerHTML = `<img src="${item.url}"><span class="idx">${i + 1}</span><button class="del" title="${t('removeTitle')}">✕</button>`;
+    div.querySelector('.del').addEventListener('click', e => {
+      e.stopPropagation();
+      URL.revokeObjectURL(images[i].url);
+      images.splice(i, 1);
+      renderThumbs();
+      updatePreview();
+    });
+    div.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', i);
+      div.classList.add('dragging');
+    });
+    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+    div.addEventListener('dragover', e => e.preventDefault());
+    div.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const from = +e.dataTransfer.getData('text/plain');
+      const to = i;
+      if (from === to || isNaN(from)) return;
+      const [moved] = images.splice(from, 1);
+      images.splice(to, 0, moved);
+      renderThumbs();
+      updatePreview();
+    });
+    thumbs.appendChild(div);
+  });
+  const has = images.length > 0;
+  clearBtn.style.display = has ? '' : 'none';
+  thumbHint.style.display = has ? '' : 'none';
+}
+
+clearBtn.addEventListener('click', () => {
+  images.forEach(it => URL.revokeObjectURL(it.url));
+  images.length = 0;
+  renderThumbs();
+  previewWrap.style.display = 'none';
+  downloadBtn.style.display = 'none';
+  delete statusHint.dataset.warn;
+  statusHint.textContent = t('statusDefault');
+});
+
+// ---- 即時預覽（任何設定變動都重畫）----
+['cols', 'rows', 'gap', 'fitMode', 'bgColor', 'transparentBg'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+
+function updatePreview() {
+  if (!images.length) {
+    previewWrap.style.display = 'none';
+    downloadBtn.style.display = 'none';
+    return;
+  }
+  const cols = Math.max(1, +document.getElementById('cols').value || 1);
+  const rows = Math.max(1, +document.getElementById('rows').value || 1);
+  const gap = Math.max(0, +document.getElementById('gap').value || 0);
+  const fit = document.getElementById('fitMode').value;
+  const transparent = document.getElementById('transparentBg').checked;
+  const bgColor = document.getElementById('bgColor').value;
+
+  if (cols * rows < images.length) {
+    statusHint.dataset.warn = '1';
+    statusHint.textContent = t('warnGrid')(cols, rows, images.length);
+  } else {
+    delete statusHint.dataset.warn;
+    statusHint.textContent = '';
+  }
+
+  // 格子大小 = 所有圖片的最大寬 / 最大高
+  const cellW = Math.max(...images.map(it => it.img.naturalWidth));
+  const cellH = Math.max(...images.map(it => it.img.naturalHeight));
+
+  canvas.width = cols * cellW + (cols - 1) * gap;
+  canvas.height = rows * cellH + (rows - 1) * gap;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!transparent) {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  images.forEach((item, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = col * (cellW + gap);
+    const y = row * (cellH + gap);
+    const img = item.img;
+    const scale = fit === 'cover'
+      ? Math.max(cellW / img.naturalWidth, cellH / img.naturalHeight)
+      : Math.min(cellW / img.naturalWidth, cellH / img.naturalHeight);
+    const dw = img.naturalWidth * scale;
+    const dh = img.naturalHeight * scale;
+    const dx = x + (cellW - dw) / 2;
+    const dy = y + (cellH - dh) / 2;
+
+    if (fit === 'cover') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, cellW, cellH);
+      ctx.clip();
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, dx, dy, dw, dh);
+    }
+  });
+
+  previewWrap.style.display = 'block';
+  downloadBtn.style.display = 'inline-block';
+  sizeInfo.textContent = t('sizeInfo')(canvas.width, canvas.height);
+}
+
+// ---- 下載 ----
+downloadBtn.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = `merged_${Date.now()}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  showToast(t('toastDownloaded'));
+});
+
+// ---- 初始化 ----
+applyLang();
+</script>
+</body>
+</html>
